@@ -1,6 +1,7 @@
+use axum::extract::Query;
 use axum::{routing::get, Router};
 use axum::response::{Html, Json};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 // use starknet::core::chain_id;
 use starknet::providers::jsonrpc::HttpTransport;
 use std::net::SocketAddr;
@@ -14,7 +15,7 @@ use starknet::core::utils::get_selector_from_name;
 use url::Url;
 use starknet::core::types::{FunctionCall, BlockId, BlockTag};
 
-const CONTRACT_ADDRESS: &str = "0x021f7fd8908aa4773421d96a5ebdedf812c85684705b36ad03482e96728b4b0e";
+const CONTRACT_ADDRESS: &str = "0x4881106983c4e4fce51627cb3845995ea40ff68808bfb15dd1ad85915f05605";
 
 pub const SEPOLIA: Felt = Felt::from_raw([
     507980251676163170,
@@ -23,9 +24,14 @@ pub const SEPOLIA: Felt = Felt::from_raw([
     1555806712078248243,
 ]);
 
+#[derive(Deserialize)]
+struct TeleportParams {
+    x: i64,
+    y: i64,
+}
+
 #[tokio::main]
 async fn main() {
-    // Build the Axum server routes
     let app = Router::new()
         .route("/", get(root))
         .route("/initialize", get(initialize_map))
@@ -33,6 +39,7 @@ async fn main() {
         .route("/move_down", get(move_down))
         .route("/move_left", get(move_left))
         .route("/move_right", get(move_right))
+        .route("/teleport_to", get(teleport_to)) //usage example: /teleport_to?x=10&y=20 
         .route("/get_position", get(get_position));
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 4000));
@@ -53,12 +60,11 @@ async fn root() -> Html<&'static str> {
             <li><strong>/move_down</strong>: Moves the player down in the game.</li>
             <li><strong>/move_left</strong>: Moves the player left in the game.</li>
             <li><strong>/move_right</strong>: Moves the player right in the game.</li>
+            <li><strong>/teleport_to</strong>: Teleports the player to given position.</li>
             <li><strong>/get_position</strong>: Retrieves the current position of the player.</li>
         </ul>
     "#)
 }
-
-
 
 async fn invoke_contract_method(method: &str, calldata: Vec<Felt>) -> Result<String, String> {
     let url = Url::from_str("https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/0HaOKF8ADK0H3TOpxI4bA2q2GqHZW7yM").unwrap();
@@ -81,15 +87,13 @@ async fn invoke_contract_method(method: &str, calldata: Vec<Felt>) -> Result<Str
     let contract = Felt::from_hex(CONTRACT_ADDRESS).unwrap();
     let selector = get_selector_from_name(method).unwrap();
 
-    // Get the current nonce for the account
     let nonce = account.get_nonce().await.unwrap();
 
-    // Prepare the transaction call
     let tx = account
         .execute_v1(vec![Call {
             to: contract,
             selector,
-            calldata, // pass the method-specific calldata
+            calldata,
         }])
         .nonce(nonce)
         .send()
@@ -101,33 +105,27 @@ async fn invoke_contract_method(method: &str, calldata: Vec<Felt>) -> Result<Str
     }
 }
 
-
+// Function for calling read-only contract methods (e.g., `get_position`)
 async fn call_contract_ro(method: &str) -> (Felt, Felt) {
-    // Initialize the URL for the Starknet RPC
     let url = Url::from_str("https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/0HaOKF8ADK0H3TOpxI4bA2q2GqHZW7yM").unwrap();
     let provider = JsonRpcClient::new(HttpTransport::new(url));
 
-    // Contract address and selector for the method
     let contract_address = Felt::from_hex(CONTRACT_ADDRESS).unwrap();
     let selector = get_selector_from_name(method).unwrap();
 
-    // Prepare the call data (empty in this case, assuming no arguments are needed)
     let calldata: Vec<Felt> = vec![];
 
-    // Construct the function call struct
     let function_call = FunctionCall {
         contract_address,
         entry_point_selector: selector,
         calldata,
     };
 
-    // Perform the read-only contract call on the latest block
     let result = provider
         .call(function_call, &BlockId::Tag(BlockTag::Latest))
         .await
         .unwrap();
 
-    // Assuming the result returns two field elements (x and y positions)
     let x = result[0];
     let y = result[1];
 
@@ -144,33 +142,40 @@ async fn initialize_map() -> Json<ApiResponse> {
 }
 
 async fn move_forward() -> Json<ApiResponse> {
-    let result = invoke_contract_method("move_forward", vec![]).await;
+    let result = invoke_contract_method("update_position", vec![Felt::from(1), Felt::from(0)]).await;
     Json(ApiResponse {
         message: result.unwrap_or_else(|err| err),
     })
 }
 
 async fn move_down() -> Json<ApiResponse> {
-    let result = invoke_contract_method("move_down", vec![]).await;
+    let result = invoke_contract_method("update_position", vec![Felt::from(-1), Felt::from(0)]).await;
     Json(ApiResponse {
         message: result.unwrap_or_else(|err| err),
     })
 }
 
 async fn move_left() -> Json<ApiResponse> {
-    let result = invoke_contract_method("move_left", vec![]).await;
+    let result = invoke_contract_method("update_position", vec![Felt::from(0), Felt::from(-1)]).await;
     Json(ApiResponse {
         message: result.unwrap_or_else(|err| err),
     })
 }
 
 async fn move_right() -> Json<ApiResponse> {
-    let result = invoke_contract_method("move_right", vec![]).await;
+    let result = invoke_contract_method("update_position", vec![Felt::from(0), Felt::from(1)]).await;
     Json(ApiResponse {
         message: result.unwrap_or_else(|err| err),
     })
 }
 
+async fn teleport_to(Query(params): Query<TeleportParams>) -> Json<ApiResponse> {
+    let result = invoke_contract_method("update_position",vec![Felt::from(params.x), Felt::from(params.y)],).await;
+
+    Json(ApiResponse {
+        message: result.unwrap_or_else(|err| err),
+    })
+}
 
 async fn get_position() -> Json<PositionResponse> {
     let position = call_contract_ro("get_position").await;
