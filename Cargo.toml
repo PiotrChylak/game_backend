@@ -3,19 +3,16 @@ name = "axum-starknet-server"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 serde = { version = "1.0.160", features = ["derive"] }
-# Axum for building the HTTP server
+
 axum = { version = "0.6", features = ["json"] }
 
 serde_json = "1.0"
 
-# Tokio for async runtime
 tokio = { version = "1", features = ["full"] }
 
-# Starknet libraries for interacting with Starknet contracts
 starknet = { git = "https://github.com/xJonathanLEI/starknet-rs", branch = "master" }
 url = "2.5.2"
 
@@ -24,10 +21,7 @@ clap = { version = "4.5.20", features = ["derive", "env"] }
 # starknet-types-core = "~0.1.4"
 # starknet_api = "0.11.0"
 
-# Additional dependencies you might need
-# Include dotenv if you plan to use environment variables for private keys, etc.
 dotenv = "0.15"
 
-# Optionally, add tracing for better logging
 tracing = "0.1"
 tracing-subscriber = "0.3"
